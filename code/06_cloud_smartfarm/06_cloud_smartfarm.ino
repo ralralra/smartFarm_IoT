@@ -91,7 +91,7 @@ void setup() {
   Serial.begin(115200);                      // 시리얼 통신 시작
   pinMode(AA, OUTPUT); pinMode(AB, OUTPUT);  // 모터드라이버 핀 4개를 출력용으로
   pinMode(PA, OUTPUT); pinMode(PB, OUTPUT);  // (팬 핀 2개 + 펌프 핀 2개)
-  pinMode(TOUCH, INPUT);                     // 터치센서는 입력용 (TTP223는 풀업 불필요)
+  pinMode(TOUCH, INPUT_PULLDOWN);            // 풀다운: 선이 빠지거나 접촉 불량이어도 LOW(꺼짐)로 읽혀 펌프 오작동 방지
   pump(false);                               // 시작할 땐 펌프 확실히 끄기
   dht.begin();                               // 온습도 센서 시작
   led.begin();                               // 네오픽셀 시작
@@ -136,8 +136,17 @@ void handleReply(String r) {
 // delay와 달리 기다리는 동안 다른 일을 할 수 있어요!
 void loop() {
   // ── ⓪ 매번: 터치 급수 — 누르는 동안만 펌프 ON ──
+  //    WiFi가 통신할 때 생기는 전기 노이즈에 한 방에 반응하지 않도록
+  //    50ms 이상 "연속으로" 눌려 있을 때만 켜요 (떼면 바로 꺼짐)
   //    (통신하는 순간엔 잠깐 멈출 수 있어요 — 3~30초마다 1번, 정상이에요)
-  pump(digitalRead(TOUCH) == HIGH);
+  static unsigned long touchSince = 0;          // 터치가 시작된 시각 (0 = 안 누르는 중)
+  if (digitalRead(TOUCH) == HIGH) {
+    if (touchSince == 0) touchSince = millis(); // 방금 눌렀네 — 시각 기록
+    pump(millis() - touchSince >= 50);          // 50ms 넘게 눌려 있으면 급수
+  } else {
+    touchSince = 0;
+    pump(false);
+  }
 
   // ── ① 2초마다: 측정 + LCD + 자동 제어 ─────────
   if (millis() - lastRead >= 2000) {     // 마지막 측정 후 2초가 지났으면
