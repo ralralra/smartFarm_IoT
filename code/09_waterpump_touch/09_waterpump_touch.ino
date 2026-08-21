@@ -67,7 +67,7 @@ void pumpStop() {
 void setup() {
   Serial.begin(115200);
 
-  pinMode(TOUCH_PIN, INPUT);       // TTP223는 푸시풀 출력 → 풀업/풀다운 불필요
+  pinMode(TOUCH_PIN, INPUT_PULLDOWN);  // 풀다운: 선이 빠지거나 접촉 불량이어도 LOW(꺼짐)로 읽혀 펌프가 멋대로 돌지 않아요
   pinMode(PUMP_IB, OUTPUT);
   digitalWrite(PUMP_IB, LOW);      // 정방향 고정
 

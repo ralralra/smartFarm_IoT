@@ -73,7 +73,7 @@ void setup() {
   Serial.begin(115200);                    // 시리얼 통신 시작
   pinMode(AA, OUTPUT); pinMode(AB, OUTPUT);  // 모터드라이버 핀 4개를 출력용으로
   pinMode(PA, OUTPUT); pinMode(PB, OUTPUT);  // (팬 핀 2개 + 펌프 핀 2개)
-  pinMode(TOUCH, INPUT);                     // 터치센서는 입력용 (TTP223는 풀업 불필요)
+  pinMode(TOUCH, INPUT_PULLDOWN);            // 풀다운: 선이 빠지거나 접촉 불량이어도 LOW(꺼짐)로 읽혀 펌프 오작동 방지
   pump(false);                               // 시작할 땐 펌프 확실히 끄기
   dht.begin();                             // 온습도 센서 시작
   led.begin();                             // 네오픽셀 시작
@@ -122,8 +122,11 @@ void loop() {
   // ── ⑥ 2초 쉬는 동안 터치 급수 감시 ──────────────
   // delay(2000) 한 방이면 그 사이 터치를 놓쳐요! 10ms씩 200번 쉬면서
   // 터치센서를 계속 확인 — 누르는 동안만 펌프가 돌아요.
+  // 한 번 HIGH라고 바로 켜면 전기 노이즈에도 반응하니, 5번(50ms) 연속일 때만 ON!
+  static int touchCnt = 0;   // 연속으로 HIGH가 읽힌 횟수 (static = 다음 loop에도 기억)
   for (int i = 0; i < 200; i++) {
-    pump(digitalRead(TOUCH) == HIGH);   // 터치 중 HIGH → 펌프 ON, 떼면 OFF
+    touchCnt = (digitalRead(TOUCH) == HIGH) ? min(touchCnt + 1, 100) : 0;
+    pump(touchCnt >= 5);     // 50ms 이상 눌려 있어야 급수 — 노이즈는 무시, 떼면 바로 OFF
     delay(10);
   }
 }
