@@ -8,9 +8,10 @@
   ※ 앱 버튼 → 실제 동작까지 3~6초 정도 걸리는 게 정상이에요.
     (앱→시트는 즉시, 보드가 시트를 3초마다 확인 + 통신 왕복 시간)
 
-  ── 배선 (05_auto_smartfarm과 동일) ──
+  ── 배선 (05_auto_smartfarm과 동일 — README 배선 표 참고) ──
   토양수분 → A2 자리(GPIO35) / DHT11 → D2 자리(GPIO26)
-  팬 → 17·16·27·14 (모터드라이버) / 네오픽셀 → D9 자리(GPIO13)
+  팬 → D4·D5 자리(17·16, 모터드라이버 MOTOR A) / 네오픽셀 → D9 자리(GPIO13)
+  🆕 워터펌프 → D6·D7 자리(27·14, 모터드라이버 MOTOR B) / 터치센서 → D3 자리(GPIO25, VCC 3.3V!)
   LCD → SDA·SCL을 보드 핀(21·22)에 직접! (쉴드 A4·A5 줄은 안 돼요)
 
   ── 명령 (시트 설정!A1 ← 앱이 씀) ──
@@ -31,8 +32,9 @@
 #define DHTPIN 26   // 온습도 센서 (확장쉴드 D2 줄)
 #define AA 16       // 모터드라이버 팬A 방향1 (D5 줄)
 #define AB 17       // 모터드라이버 팬A 방향2 (D4 줄)
-#define BA 27       // 모터드라이버 팬B 방향1 (D6 줄)
-#define BB 14       // 모터드라이버 팬B 방향2 (D7 줄)
+#define PA 27       // 모터드라이버 워터펌프 방향1 (D6 줄 — 팬B 자리)
+#define PB 14       // 모터드라이버 워터펌프 방향2 (D7 줄)
+#define TOUCH 25    // 터치센서 SIG (D3 줄 — 누르는 동안 HIGH)
 #define LEDPIN 13   // 네오픽셀 (D9 줄)
 #define NUMLED 12   // 네오픽셀 LED 알갱이 개수
 
@@ -54,11 +56,15 @@ DHT dht(DHTPIN, DHT11);                                       // 온습도 센�
 Adafruit_NeoPixel led(NUMLED, LEDPIN, NEO_GRB + NEO_KHZ800);  // 네오픽셀
 LiquidCrystal_I2C lcd(0x27, 16, 2);                           // LCD (주소 0x27, 16칸×2줄 — 안 나오면 0x3F)
 
-// 팬 두 개를 켜고(true) 끄는(false) 함수
+// 팬을 켜고(true) 끄는(false) 함수
 void fan(bool on) {
   // "on ? HIGH : LOW" = 조건 연산자: on이 참이면 HIGH, 거짓이면 LOW
-  digitalWrite(AA, on ? HIGH : LOW); digitalWrite(AB, LOW);   // 팬A
-  digitalWrite(BA, on ? HIGH : LOW); digitalWrite(BB, LOW);   // 팬B
+  digitalWrite(AA, on ? HIGH : LOW); digitalWrite(AB, LOW);   // 팬A (MOTOR A)
+}
+
+// 워터펌프를 켜고(true) 끄는(false) 함수 — 팬과 원리가 똑같아요! (채널만 B)
+void pump(bool on) {
+  digitalWrite(PA, on ? HIGH : LOW); digitalWrite(PB, LOW);   // 펌프 (MOTOR B)
 }
 
 // 네오픽셀을 생장등(보라색)으로 켜고(true) 끄는(false) 함수
@@ -84,7 +90,9 @@ String httpGET(String url) {
 void setup() {
   Serial.begin(115200);                      // 시리얼 통신 시작
   pinMode(AA, OUTPUT); pinMode(AB, OUTPUT);  // 모터드라이버 핀 4개를 출력용으로
-  pinMode(BA, OUTPUT); pinMode(BB, OUTPUT);
+  pinMode(PA, OUTPUT); pinMode(PB, OUTPUT);  // (팬 핀 2개 + 펌프 핀 2개)
+  pinMode(TOUCH, INPUT);                     // 터치센서는 입력용 (TTP223는 풀업 불필요)
+  pump(false);                               // 시작할 땐 펌프 확실히 끄기
   dht.begin();                               // 온습도 센서 시작
   led.begin();                               // 네오픽셀 시작
   led.setBrightness(150);                    // 밝기 150 (최대 255)
@@ -127,6 +135,10 @@ void handleReply(String r) {
 // 무한 반복 구간 — millis()는 "전원 켜진 뒤 지난 시간(ms)"을 알려주는 시계예요.
 // delay와 달리 기다리는 동안 다른 일을 할 수 있어요!
 void loop() {
+  // ── ⓪ 매번: 터치 급수 — 누르는 동안만 펌프 ON ──
+  //    (통신하는 순간엔 잠깐 멈출 수 있어요 — 3~30초마다 1번, 정상이에요)
+  pump(digitalRead(TOUCH) == HIGH);
+
   // ── ① 2초마다: 측정 + LCD + 자동 제어 ─────────
   if (millis() - lastRead >= 2000) {     // 마지막 측정 후 2초가 지났으면
     lastRead = millis();                 // 지금 시각을 기록해 두고

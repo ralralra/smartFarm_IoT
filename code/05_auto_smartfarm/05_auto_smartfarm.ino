@@ -7,11 +7,14 @@
   온도 21℃ 미만      → 네오픽셀 따뜻한 빛 (보온)
   습도 80% 초과      → 팬 ON (곰팡이 방지 환기)
   토양습도 70% 초과  → 네오픽셀 따뜻한 빛 (과습 말리기 — 키트 자료 방식)
-  토양습도 30% 미만  → 시리얼·LCD에 "물 주세요!" (키트엔 펌프가 없어서 사람이 급수!)
+  토양습도 30% 미만  → 시리얼·LCD에 "물 주세요!"
+  🆕 터치센서 누르는 동안 → 워터펌프 급수 ("물 주세요"가 뜨면 터치 한 번!)
 
-  ── 배선 (D1 R32 변환 완료) ──
+  ── 배선 (D1 R32 변환 완료 — README 배선 표 참고) ──
   토양수분 → A2 자리(GPIO35) / DHT11 → D2 자리(GPIO26)
-  팬 → D4·D5·D6·D7 자리(17·16·27·14, 모터드라이버 경유) / 네오픽셀 → D9 자리(GPIO13)
+  팬 → D4·D5 자리(17·16, 모터드라이버 MOTOR A) / 네오픽셀 → D9 자리(GPIO13)
+  🆕 워터펌프 → D6·D7 자리(27·14, 모터드라이버 MOTOR B — 팬B 자리를 펌프에 양보!)
+  🆕 터치센서(TTP223) → D3 자리(GPIO25) · VCC는 꼭 3.3V!
   LCD → SDA·SCL을 보드 핀(21·22)에 직접! (쉴드 A4·A5 줄은 안 돼요)
 */
 
@@ -25,8 +28,9 @@
 #define DHTPIN 26   // 온습도 센서 (확장쉴드 D2 줄)
 #define AA 16       // 모터드라이버 팬A 방향1 (D5 줄)
 #define AB 17       // 모터드라이버 팬A 방향2 (D4 줄)
-#define BA 27       // 모터드라이버 팬B 방향1 (D6 줄)
-#define BB 14       // 모터드라이버 팬B 방향2 (D7 줄)
+#define PA 27       // 모터드라이버 워터펌프 방향1 (D6 줄 — 팬B 자리)
+#define PB 14       // 모터드라이버 워터펌프 방향2 (D7 줄)
+#define TOUCH 25    // 터치센서 SIG (D3 줄 — 누르는 동안 HIGH)
 #define LEDPIN 13   // 네오픽셀 (D9 줄)
 #define NUMLED 12   // 네오픽셀 LED 알갱이 개수
 
@@ -45,12 +49,16 @@ DHT dht(DHTPIN, DHT11);                                       // 온습도 센�
 Adafruit_NeoPixel led(NUMLED, LEDPIN, NEO_GRB + NEO_KHZ800);  // 네오픽셀
 LiquidCrystal_I2C lcd(0x27, 16, 2);                           // LCD (I2C 주소 0x27, 16칸×2줄 — 안 나오면 0x3F)
 
-// 팬 두 개를 켜고(true) 끄는(false) 함수
+// 팬을 켜고(true) 끄는(false) 함수
 void fan(bool on) {
   // "on ? HIGH : LOW" = 조건 연산자: on이 참이면 HIGH, 거짓이면 LOW
   // 한쪽 핀만 HIGH가 되어야 회전, 둘 다 LOW면 정지
-  digitalWrite(AA, on ? HIGH : LOW); digitalWrite(AB, LOW);   // 팬A
-  digitalWrite(BA, on ? HIGH : LOW); digitalWrite(BB, LOW);   // 팬B
+  digitalWrite(AA, on ? HIGH : LOW); digitalWrite(AB, LOW);   // 팬A (MOTOR A)
+}
+
+// 워터펌프를 켜고(true) 끄는(false) 함수 — 팬과 원리가 똑같아요! (채널만 B)
+void pump(bool on) {
+  digitalWrite(PA, on ? HIGH : LOW); digitalWrite(PB, LOW);   // 펌프 (MOTOR B)
 }
 
 // 네오픽셀을 따뜻한 빛으로 켜고(true) 끄는(false) 함수
@@ -64,7 +72,9 @@ void warmLight(bool on) {
 void setup() {
   Serial.begin(115200);                    // 시리얼 통신 시작
   pinMode(AA, OUTPUT); pinMode(AB, OUTPUT);  // 모터드라이버 핀 4개를 출력용으로
-  pinMode(BA, OUTPUT); pinMode(BB, OUTPUT);
+  pinMode(PA, OUTPUT); pinMode(PB, OUTPUT);  // (팬 핀 2개 + 펌프 핀 2개)
+  pinMode(TOUCH, INPUT);                     // 터치센서는 입력용 (TTP223는 풀업 불필요)
+  pump(false);                               // 시작할 땐 펌프 확실히 끄기
   dht.begin();                             // 온습도 센서 시작
   led.begin();                             // 네오픽셀 시작
   led.setBrightness(150);                  // 밝기 150 (최대 255)
@@ -106,8 +116,14 @@ void loop() {
   // ── ⑤ 시리얼에도 상태 출력 ─────────────────────
   if (needFan)  Serial.print("팬ON ");
   if (needWarm) Serial.print("보온등ON ");
-  if (soilPct < SOIL_DRY) Serial.print("💧물 주세요! ");
+  if (soilPct < SOIL_DRY) Serial.print("💧물 주세요! (터치센서를 누르면 급수) ");
   Serial.println();   // 줄바꿈
 
-  delay(2000);   // 2초 쉬고 처음부터 다시
+  // ── ⑥ 2초 쉬는 동안 터치 급수 감시 ──────────────
+  // delay(2000) 한 방이면 그 사이 터치를 놓쳐요! 10ms씩 200번 쉬면서
+  // 터치센서를 계속 확인 — 누르는 동안만 펌프가 돌아요.
+  for (int i = 0; i < 200; i++) {
+    pump(digitalRead(TOUCH) == HIGH);   // 터치 중 HIGH → 펌프 ON, 떼면 OFF
+    delay(10);
+  }
 }
