@@ -122,7 +122,15 @@ unsigned long lastRead = 0, lastPoll = 0, lastUpload = 0;   // 세 가지 일의
 void handleReply(String r) {
   int comma = r.indexOf(',');        // 쉼표(,)의 위치 찾기
   if (comma <= 0) return;            // 쉼표가 없으면(통신 실패 등) 이전 값 유지하고 종료
-  cmd = r.substring(0, comma);                  // 쉼표 앞부분 = 명령 (예: "AUTO")
+  String c = r.substring(0, comma);  // 쉼표 앞부분 = 명령이어야 해요 (예: "AUTO")
+
+  // 아는 명령이 아니면 무시! — URL이 다른 서버(잘못된 배포 주소)를 가리키면
+  // {"success":true,...} 같은 JSON이 와요. 그걸 명령으로 오해하지 않게 걸러냅니다.
+  if (c != "AUTO" && c != "FAN_ON" && c != "FAN_OFF" && c != "LED_ON" && c != "LED_OFF") {
+    Serial.println("⚠ 서버 응답이 '명령,기준값' 형식이 아니에요! URL이 07 스크립트의 /exec 주소가 맞는지 확인하세요");
+    return;
+  }
+  cmd = c;                                      // 명령 적용
   dryLimit = r.substring(comma + 1).toInt();    // 쉼표 뒷부분 = 기준값 (예: 30, 문자열→정수 변환)
 
   // 수동 명령이면 바로 실행
